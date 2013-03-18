@@ -11,13 +11,13 @@ try:
   from setuptools import setup, Extension
 except ImportError:
   try:
-    from ez_setup import use_setuptools
+    from distribute_setup import use_setuptools
     use_setuptools()
     from setuptools import setup, Extension
   except ImportError:
     sys.stderr.write(
         "Could not import setuptools; make sure you have setuptools or "
-        "ez_setup installed.\n")
+        "distribute_setup installed.\n")
     raise
 from distutils.command.clean import clean as _clean
 from distutils.command.build_py import build_py as _build_py
