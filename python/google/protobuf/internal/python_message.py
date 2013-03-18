@@ -53,8 +53,15 @@ __author__ = 'robinson@google.com (Will Robinson)'
 try:
   from cStringIO import StringIO
 except ImportError:
-  from StringIO import StringIO
-import copy_reg
+  try:
+    from io import StringIO
+  except ImportError:
+    from StringIO import StringIO
+
+try:
+  import copy_reg
+except ImportError:
+  import copyreg
 import struct
 import weakref
 
@@ -798,7 +805,7 @@ def _AddMergeFromStringMethod(message_descriptor, cls):
         raise message_mod.DecodeError('Unexpected end-group tag.')
     except IndexError:
       raise message_mod.DecodeError('Truncated message.')
-    except struct.error, e:
+    except struct.error as e:
       raise message_mod.DecodeError(e)
     return length   # Return this for legacy reasons.
   cls.MergeFromString = MergeFromString
