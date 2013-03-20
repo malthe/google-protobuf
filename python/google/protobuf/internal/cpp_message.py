@@ -34,10 +34,22 @@ Descriptor objects at runtime backed by the protocol buffer C++ API.
 
 __author__ = 'petar@google.com (Petar Petrov)'
 
-import copy_reg
+import sys
 import operator
+
+try:
+  import copy_reg
+except ImportError:
+  import copyreg as copy_reg
+
+if sys.version_info[0] == 3:
+  iteritems = dict.items
+else:
+  iteritems = dict.iteritems
+
 from google.protobuf.internal import _net_proto2___python
 from google.protobuf.internal import enum_type_wrapper
+from google.protobuf.internal.utils import cmp
 from google.protobuf import message
 
 
@@ -158,12 +170,10 @@ class RepeatedScalarContainer(object):
   def __hash__(self):
     raise TypeError('unhashable object')
 
-  def sort(self, *args, **kwargs):
-    # Maintain compatibility with the previous interface.
-    if 'sort_function' in kwargs:
-      kwargs['cmp'] = kwargs.pop('sort_function')
-    self._cmsg.AssignRepeatedScalar(self._cfield_descriptor,
-                                    sorted(self, *args, **kwargs))
+  def sort(self, sort_function=cmp):
+    values = self[slice(None, None, None)]
+    values.sort(sort_function)
+    self._cmsg.AssignRepeatedScalar(self._cfield_descriptor, values)
 
 
 def RepeatedScalarProperty(cdescriptor):
@@ -246,29 +256,27 @@ class RepeatedCompositeContainer(object):
   def __hash__(self):
     raise TypeError('unhashable object')
 
-  def sort(self, cmp=None, key=None, reverse=False, **kwargs):
-    # Maintain compatibility with the old interface.
-    if cmp is None and 'sort_function' in kwargs:
-      cmp = kwargs.pop('sort_function')
+  def sort(self, sort_function=cmp):
+    messages = []
+    for index in range(len(self)):
+      # messages[i][0] is where the i-th element of the new array has to come
+      # from.
+      # messages[i][1] is where the i-th element of the old array has to go.
+      messages.append([index, 0, self[index]])
+    messages.sort(lambda x,y: sort_function(x[2], y[2]))
 
-    # The cmp function, if provided, is passed the results of the key function,
-    # so we only need to wrap one of them.
-    if key is None:
-      index_key = self.__getitem__
-    else:
-      index_key = lambda i: key(self[i])
-
-    # Sort the list of current indexes by the underlying object.
-    indexes = range(len(self))
-    indexes.sort(cmp=cmp, key=index_key, reverse=reverse)
+    # Remember which position each elements has to move to.
+    for i in range(len(messages)):
+      messages[messages[i][0]][1] = i
 
     # Apply the transposition.
-    for dest, src in enumerate(indexes):
-      if dest == src:
+    for i in range(len(messages)):
+      from_position = messages[i][0]
+      if i == from_position:
         continue
-      self._cmsg.SwapRepeatedFieldElements(self._cfield_descriptor, dest, src)
-      # Don't swap the same value twice.
-      indexes[src] = src
+      self._cmsg.SwapRepeatedFieldElements(
+          self._cfield_descriptor, i, from_position)
+      messages[messages[i][1]][0] = from_position
 
 
 def RepeatedCompositeProperty(cdescriptor, message_type):
@@ -420,7 +428,7 @@ def _AddEnumValues(message_descriptor, dictionary):
 def _AddClassAttributesForNestedExtensions(message_descriptor, dictionary):
   """Adds class attributes for the nested extensions."""
   extension_dict = message_descriptor.extensions_by_name
-  for extension_name, extension_field in extension_dict.iteritems():
+  for extension_name, extension_field in iteritems(extension_dict):
     assert extension_name not in dictionary
     dictionary[extension_name] = extension_field
 
@@ -454,7 +462,7 @@ def _AddInitMethod(message_descriptor, cls):
   def Init(self, **kwargs):
     """Message constructor."""
     cmessage = kwargs.pop('__cmessage', None)
-    if cmessage:
+    if cmessage is not None:
       self._cmsg = cmessage
     else:
       self._cmsg = NewCMessage(message_descriptor.full_name)
@@ -474,7 +482,7 @@ def _AddInitMethod(message_descriptor, cls):
       self._HACK_REFCOUNTS = self
     self._composite_fields = {}
 
-    for field_name, field_value in kwargs.iteritems():
+    for field_name, field_value in iteritems(kwargs):
       field_cdescriptor = self.__descriptors.get(field_name, None)
       if not field_cdescriptor:
         raise ValueError('Protocol message has no "%s" field.' % field_name)
@@ -538,7 +546,7 @@ def _AddMessageMethods(message_descriptor, cls):
 
   def Clear(self):
     cmessages_to_release = []
-    for field_name, child_field in self._composite_fields.iteritems():
+    for field_name, child_field in iteritems(self._composite_fields):
       child_cdescriptor = self.__descriptors[field_name]
       # TODO(anuraag): Support clearing repeated message fields as well.
       if (child_cdescriptor.label != _LABEL_REPEATED and
@@ -631,7 +639,7 @@ def _AddMessageMethods(message_descriptor, cls):
     return text_format.MessageToString(self, as_utf8=True).decode('utf-8')
 
   # Attach the local methods to the message class.
-  for key, value in locals().copy().iteritems():
+  for key, value in iteritems(locals().copy()):
     if key not in ('key', 'value', '__builtins__', '__name__', '__doc__'):
       setattr(cls, key, value)
 
@@ -658,6 +666,6 @@ def _AddMessageMethods(message_descriptor, cls):
 def _AddPropertiesForExtensions(message_descriptor, cls):
   """Adds properties for all fields in this protocol message type."""
   extension_dict = message_descriptor.extensions_by_name
-  for extension_name, extension_field in extension_dict.iteritems():
+  for extension_name, extension_field in iteritems(extension_dict):
     constant_name = extension_name.upper() + '_FIELD_NUMBER'
     setattr(cls, constant_name, extension_field.number)

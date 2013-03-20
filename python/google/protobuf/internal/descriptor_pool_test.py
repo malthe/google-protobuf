@@ -58,15 +58,15 @@ class DescriptorPoolTest(unittest.TestCase):
     name1 = 'net/proto2/python/internal/factory_test1.proto'
     file_desc1 = self.pool.FindFileByName(name1)
     self.assertIsInstance(file_desc1, descriptor.FileDescriptor)
-    self.assertEquals(name1, file_desc1.name)
-    self.assertEquals('net.proto2.python.internal', file_desc1.package)
+    self.assertEqual(name1, file_desc1.name)
+    self.assertEqual('net.proto2.python.internal', file_desc1.package)
     self.assertIn('Factory1Message', file_desc1.message_types_by_name)
 
     name2 = 'net/proto2/python/internal/factory_test2.proto'
     file_desc2 = self.pool.FindFileByName(name2)
     self.assertIsInstance(file_desc2, descriptor.FileDescriptor)
-    self.assertEquals(name2, file_desc2.name)
-    self.assertEquals('net.proto2.python.internal', file_desc2.package)
+    self.assertEqual(name2, file_desc2.name)
+    self.assertEqual('net.proto2.python.internal', file_desc2.package)
     self.assertIn('Factory2Message', file_desc2.message_types_by_name)
 
   def testFindFileByNameFailure(self):
@@ -80,17 +80,17 @@ class DescriptorPoolTest(unittest.TestCase):
     file_desc1 = self.pool.FindFileContainingSymbol(
         'net.proto2.python.internal.Factory1Message')
     self.assertIsInstance(file_desc1, descriptor.FileDescriptor)
-    self.assertEquals('net/proto2/python/internal/factory_test1.proto',
+    self.assertEqual('net/proto2/python/internal/factory_test1.proto',
                       file_desc1.name)
-    self.assertEquals('net.proto2.python.internal', file_desc1.package)
+    self.assertEqual('net.proto2.python.internal', file_desc1.package)
     self.assertIn('Factory1Message', file_desc1.message_types_by_name)
 
     file_desc2 = self.pool.FindFileContainingSymbol(
         'net.proto2.python.internal.Factory2Message')
     self.assertIsInstance(file_desc2, descriptor.FileDescriptor)
-    self.assertEquals('net/proto2/python/internal/factory_test2.proto',
+    self.assertEqual('net/proto2/python/internal/factory_test2.proto',
                       file_desc2.name)
-    self.assertEquals('net.proto2.python.internal', file_desc2.package)
+    self.assertEqual('net.proto2.python.internal', file_desc2.package)
     self.assertIn('Factory2Message', file_desc2.message_types_by_name)
 
   def testFindFileContainingSymbolFailure(self):
@@ -104,67 +104,67 @@ class DescriptorPoolTest(unittest.TestCase):
     msg1 = self.pool.FindMessageTypeByName(
         'net.proto2.python.internal.Factory1Message')
     self.assertIsInstance(msg1, descriptor.Descriptor)
-    self.assertEquals('Factory1Message', msg1.name)
-    self.assertEquals('net.proto2.python.internal.Factory1Message',
+    self.assertEqual('Factory1Message', msg1.name)
+    self.assertEqual('net.proto2.python.internal.Factory1Message',
                       msg1.full_name)
-    self.assertEquals(None, msg1.containing_type)
+    self.assertEqual(None, msg1.containing_type)
 
     nested_msg1 = msg1.nested_types[0]
-    self.assertEquals('NestedFactory1Message', nested_msg1.name)
-    self.assertEquals(msg1, nested_msg1.containing_type)
+    self.assertEqual('NestedFactory1Message', nested_msg1.name)
+    self.assertEqual(msg1, nested_msg1.containing_type)
 
     nested_enum1 = msg1.enum_types[0]
-    self.assertEquals('NestedFactory1Enum', nested_enum1.name)
-    self.assertEquals(msg1, nested_enum1.containing_type)
+    self.assertEqual('NestedFactory1Enum', nested_enum1.name)
+    self.assertEqual(msg1, nested_enum1.containing_type)
 
-    self.assertEquals(nested_msg1, msg1.fields_by_name[
+    self.assertEqual(nested_msg1, msg1.fields_by_name[
         'nested_factory_1_message'].message_type)
-    self.assertEquals(nested_enum1, msg1.fields_by_name[
+    self.assertEqual(nested_enum1, msg1.fields_by_name[
         'nested_factory_1_enum'].enum_type)
 
     msg2 = self.pool.FindMessageTypeByName(
         'net.proto2.python.internal.Factory2Message')
     self.assertIsInstance(msg2, descriptor.Descriptor)
-    self.assertEquals('Factory2Message', msg2.name)
-    self.assertEquals('net.proto2.python.internal.Factory2Message',
+    self.assertEqual('Factory2Message', msg2.name)
+    self.assertEqual('net.proto2.python.internal.Factory2Message',
                       msg2.full_name)
     self.assertIsNone(msg2.containing_type)
 
     nested_msg2 = msg2.nested_types[0]
-    self.assertEquals('NestedFactory2Message', nested_msg2.name)
-    self.assertEquals(msg2, nested_msg2.containing_type)
+    self.assertEqual('NestedFactory2Message', nested_msg2.name)
+    self.assertEqual(msg2, nested_msg2.containing_type)
 
     nested_enum2 = msg2.enum_types[0]
-    self.assertEquals('NestedFactory2Enum', nested_enum2.name)
-    self.assertEquals(msg2, nested_enum2.containing_type)
+    self.assertEqual('NestedFactory2Enum', nested_enum2.name)
+    self.assertEqual(msg2, nested_enum2.containing_type)
 
-    self.assertEquals(nested_msg2, msg2.fields_by_name[
+    self.assertEqual(nested_msg2, msg2.fields_by_name[
         'nested_factory_2_message'].message_type)
-    self.assertEquals(nested_enum2, msg2.fields_by_name[
+    self.assertEqual(nested_enum2, msg2.fields_by_name[
         'nested_factory_2_enum'].enum_type)
 
     self.assertTrue(msg2.fields_by_name['int_with_default'].has_default)
-    self.assertEquals(
+    self.assertEqual(
         1776, msg2.fields_by_name['int_with_default'].default_value)
 
     self.assertTrue(msg2.fields_by_name['double_with_default'].has_default)
-    self.assertEquals(
+    self.assertEqual(
         9.99, msg2.fields_by_name['double_with_default'].default_value)
 
     self.assertTrue(msg2.fields_by_name['string_with_default'].has_default)
-    self.assertEquals(
+    self.assertEqual(
         'hello world', msg2.fields_by_name['string_with_default'].default_value)
 
     self.assertTrue(msg2.fields_by_name['bool_with_default'].has_default)
     self.assertFalse(msg2.fields_by_name['bool_with_default'].default_value)
 
     self.assertTrue(msg2.fields_by_name['enum_with_default'].has_default)
-    self.assertEquals(
+    self.assertEqual(
         1, msg2.fields_by_name['enum_with_default'].default_value)
 
     msg3 = self.pool.FindMessageTypeByName(
         'net.proto2.python.internal.Factory2Message.NestedFactory2Message')
-    self.assertEquals(nested_msg2, msg3)
+    self.assertEqual(nested_msg2, msg3)
 
   def testFindMessageTypeByNameFailure(self):
     try:
@@ -177,29 +177,29 @@ class DescriptorPoolTest(unittest.TestCase):
     enum1 = self.pool.FindEnumTypeByName(
         'net.proto2.python.internal.Factory1Enum')
     self.assertIsInstance(enum1, descriptor.EnumDescriptor)
-    self.assertEquals(0, enum1.values_by_name['FACTORY_1_VALUE_0'].number)
-    self.assertEquals(1, enum1.values_by_name['FACTORY_1_VALUE_1'].number)
+    self.assertEqual(0, enum1.values_by_name['FACTORY_1_VALUE_0'].number)
+    self.assertEqual(1, enum1.values_by_name['FACTORY_1_VALUE_1'].number)
 
     nested_enum1 = self.pool.FindEnumTypeByName(
         'net.proto2.python.internal.Factory1Message.NestedFactory1Enum')
     self.assertIsInstance(nested_enum1, descriptor.EnumDescriptor)
-    self.assertEquals(
+    self.assertEqual(
         0, nested_enum1.values_by_name['NESTED_FACTORY_1_VALUE_0'].number)
-    self.assertEquals(
+    self.assertEqual(
         1, nested_enum1.values_by_name['NESTED_FACTORY_1_VALUE_1'].number)
 
     enum2 = self.pool.FindEnumTypeByName(
         'net.proto2.python.internal.Factory2Enum')
     self.assertIsInstance(enum2, descriptor.EnumDescriptor)
-    self.assertEquals(0, enum2.values_by_name['FACTORY_2_VALUE_0'].number)
-    self.assertEquals(1, enum2.values_by_name['FACTORY_2_VALUE_1'].number)
+    self.assertEqual(0, enum2.values_by_name['FACTORY_2_VALUE_0'].number)
+    self.assertEqual(1, enum2.values_by_name['FACTORY_2_VALUE_1'].number)
 
     nested_enum2 = self.pool.FindEnumTypeByName(
         'net.proto2.python.internal.Factory2Message.NestedFactory2Enum')
     self.assertIsInstance(nested_enum2, descriptor.EnumDescriptor)
-    self.assertEquals(
+    self.assertEqual(
         0, nested_enum2.values_by_name['NESTED_FACTORY_2_VALUE_0'].number)
-    self.assertEquals(
+    self.assertEqual(
         1, nested_enum2.values_by_name['NESTED_FACTORY_2_VALUE_1'].number)
 
   def testFindEnumTypeByNameFailure(self):

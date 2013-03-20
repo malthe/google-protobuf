@@ -41,6 +41,8 @@ are:
 
 __author__ = 'petar@google.com (Petar Petrov)'
 
+from google.protobuf.internal.utils import cmp
+
 
 class BaseContainer(object):
 
@@ -78,13 +80,8 @@ class BaseContainer(object):
   def __repr__(self):
     return repr(self._values)
 
-  def sort(self, *args, **kwargs):
-    # Continue to support the old sort_function keyword argument.
-    # This is expected to be a rare occurrence, so use LBYL to avoid
-    # the overhead of actually catching KeyError.
-    if 'sort_function' in kwargs:
-      kwargs['cmp'] = kwargs.pop('sort_function')
-    self._values.sort(*args, **kwargs)
+  def sort(self, sort_function=cmp):
+    self._values.sort(sort_function)
 
 
 class RepeatedScalarFieldContainer(BaseContainer):
@@ -146,12 +143,30 @@ class RepeatedScalarFieldContainer(BaseContainer):
 
   def __setitem__(self, key, value):
     """Sets the item on the specified position."""
-    self._type_checker.CheckValue(value)
-    self._values[key] = value
+    if isinstance(key, slice):
+        new_values = []
+        for val in value:
+          self._type_checker.CheckValue(val)
+          new_values.append(val)
+        self._values[key.start:key.stop] = new_values
+        self._message_listener.Modified()
+    else:
+        self._type_checker.CheckValue(value)
+        self._values[key] = value
+        self._message_listener.Modified()
+
+  def __getitem__(self, key):
+    """Retrieves the subset of items from between the specified indices."""
+    if isinstance(key, slice):
+        return self._values[key.start:key.stop]
+    else:
+        return super(RepeatedScalarFieldContainer, self).__getitem__(key)
+
+  def __delslice__(self, start, stop):
+    del self._values[start:stop]
     self._message_listener.Modified()
 
   def __getslice__(self, start, stop):
-    """Retrieves the subset of items from between the specified indices."""
     return self._values[start:stop]
 
   def __setslice__(self, start, stop, values):
@@ -164,13 +179,11 @@ class RepeatedScalarFieldContainer(BaseContainer):
     self._message_listener.Modified()
 
   def __delitem__(self, key):
-    """Deletes the item at the specified position."""
-    del self._values[key]
-    self._message_listener.Modified()
-
-  def __delslice__(self, start, stop):
     """Deletes the subset of items from between the specified indices."""
-    del self._values[start:stop]
+    if isinstance(key, slice):
+        del self._values[key.start:key.stop]
+    else:
+        del self._values[key]
     self._message_listener.Modified()
 
   def __eq__(self, other):
@@ -245,18 +258,19 @@ class RepeatedCompositeFieldContainer(BaseContainer):
     self._values.remove(elem)
     self._message_listener.Modified()
 
-  def __getslice__(self, start, stop):
+  def __getitem__(self, key):
     """Retrieves the subset of items from between the specified indices."""
-    return self._values[start:stop]
+    if isinstance(key, slice):
+        return self._values[key.start:key.stop]
+    else:
+        return super(RepeatedCompositeFieldContainer, self).__getitem__(key)
 
   def __delitem__(self, key):
-    """Deletes the item at the specified position."""
-    del self._values[key]
-    self._message_listener.Modified()
-
-  def __delslice__(self, start, stop):
     """Deletes the subset of items from between the specified indices."""
-    del self._values[start:stop]
+    if isinstance(key, slice):
+        del self._values[key.start:key.stop]
+    else:
+        del self._values[key]
     self._message_listener.Modified()
 
   def __eq__(self, other):

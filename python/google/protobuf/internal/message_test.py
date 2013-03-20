@@ -47,22 +47,24 @@ import copy
 import math
 import operator
 import pickle
-
 import unittest
 from google.protobuf import unittest_import_pb2
 from google.protobuf import unittest_pb2
-from google.protobuf.internal import api_implementation
 from google.protobuf.internal import test_util
-from google.protobuf import message
+from google.protobuf.internal.utils import cmp
 
-# Python pre-2.6 does not have isinf() or isnan() functions, so we have
-# to provide our own.
-def isnan(val):
-  # NaN is never equal to itself.
-  return val != val
-def isinf(val):
-  # Infinity times zero equals NaN.
-  return not isnan(val) and isnan(val * 0)
+try:
+  from math import isnan, isinf
+except ImportError:
+  #Python pre-2.6 does not have isinf() or isnan() functions, so we have
+  # to provide our own.
+  def isnan(val):
+    # NaN is never equal to itself.
+    return val != val
+  def isinf(val):
+    # Infinity times zero equals NaN.
+    return not isnan(val) and isnan(val * 0)
+
 def IsPosInf(val):
   return isinf(val) and (val > 0)
 def IsNegInf(val):
@@ -75,9 +77,9 @@ class MessageTest(unittest.TestCase):
     golden_message = unittest_pb2.TestAllTypes()
     golden_message.ParseFromString(golden_data)
     test_util.ExpectAllFieldsSet(self, golden_message)
-    self.assertEqual(golden_data, golden_message.SerializeToString())
+    self.assertTrue(golden_message.SerializeToString() == golden_data)
     golden_copy = copy.deepcopy(golden_message)
-    self.assertEqual(golden_data, golden_copy.SerializeToString())
+    self.assertTrue(golden_copy.SerializeToString() == golden_data)
 
   def testGoldenExtensions(self):
     golden_data = test_util.GoldenFile('golden_message').read()
@@ -85,10 +87,10 @@ class MessageTest(unittest.TestCase):
     golden_message.ParseFromString(golden_data)
     all_set = unittest_pb2.TestAllExtensions()
     test_util.SetAllExtensions(all_set)
-    self.assertEquals(all_set, golden_message)
-    self.assertEqual(golden_data, golden_message.SerializeToString())
+    self.assertEqual(all_set, golden_message)
+    self.assertTrue(golden_message.SerializeToString() == golden_data)
     golden_copy = copy.deepcopy(golden_message)
-    self.assertEqual(golden_data, golden_copy.SerializeToString())
+    self.assertTrue(golden_copy.SerializeToString() == golden_data)
 
   def testGoldenPackedMessage(self):
     golden_data = test_util.GoldenFile('golden_packed_fields_message').read()
@@ -96,10 +98,10 @@ class MessageTest(unittest.TestCase):
     golden_message.ParseFromString(golden_data)
     all_set = unittest_pb2.TestPackedTypes()
     test_util.SetAllPackedFields(all_set)
-    self.assertEquals(all_set, golden_message)
-    self.assertEqual(golden_data, all_set.SerializeToString())
+    self.assertEqual(all_set, golden_message)
+    self.assertTrue(all_set.SerializeToString() == golden_data)
     golden_copy = copy.deepcopy(golden_message)
-    self.assertEqual(golden_data, golden_copy.SerializeToString())
+    self.assertTrue(golden_copy.SerializeToString() == golden_data)
 
   def testGoldenPackedExtensions(self):
     golden_data = test_util.GoldenFile('golden_packed_fields_message').read()
@@ -107,7 +109,7 @@ class MessageTest(unittest.TestCase):
     golden_message.ParseFromString(golden_data)
     all_set = unittest_pb2.TestPackedExtensions()
     test_util.SetAllPackedExtensions(all_set)
-    self.assertEquals(all_set, golden_message)
+    self.assertEqual(all_set, golden_message)
     self.assertEqual(golden_data, all_set.SerializeToString())
     golden_copy = copy.deepcopy(golden_message)
     self.assertEqual(golden_data, golden_copy.SerializeToString())
@@ -119,15 +121,15 @@ class MessageTest(unittest.TestCase):
     pickled_message = pickle.dumps(golden_message)
 
     unpickled_message = pickle.loads(pickled_message)
-    self.assertEquals(unpickled_message, golden_message)
+    self.assertEqual(unpickled_message, golden_message)
 
   def testPickleIncompleteProto(self):
     golden_message = unittest_pb2.TestRequired(a=1)
     pickled_message = pickle.dumps(golden_message)
 
     unpickled_message = pickle.loads(pickled_message)
-    self.assertEquals(unpickled_message, golden_message)
-    self.assertEquals(unpickled_message.a, 1)
+    self.assertEqual(unpickled_message, golden_message)
+    self.assertEqual(unpickled_message.a, 1)
     # This is still an incomplete proto - so serializing should fail
     self.assertRaises(message.EncodeError, unpickled_message.SerializeToString)
 

@@ -28,8 +28,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# This code is meant to work on Python 2.4 and above only.
-#
 # TODO(robinson): Helpers for verbose, common checks like seeing if a
 # descriptor's cpp_type is CPPTYPE_MESSAGE.
 
@@ -54,16 +52,24 @@ try:
   from cStringIO import StringIO
 except ImportError:
   try:
-    from io import StringIO
+    from io import BytesIO as StringIO
   except ImportError:
     from StringIO import StringIO
 
 try:
   import copy_reg
 except ImportError:
-  import copyreg
+  import copyreg as copy_reg
+
+import sys
 import struct
 import weakref
+
+if sys.version_info[0] == 3:
+  iteritems = dict.items
+  xrange = range
+else:
+  iteritems = dict.iteritems
 
 # We use "as" to avoid name collisions with variables.
 from google.protobuf.internal import containers
@@ -232,7 +238,7 @@ def _AttachFieldHelpers(cls, field_descriptor):
 
 def _AddClassAttributesForNestedExtensions(descriptor, dictionary):
   extension_dict = descriptor.extensions_by_name
-  for extension_name, extension_field in extension_dict.iteritems():
+  for extension_name, extension_field in extension_dict.items():
     assert extension_name not in dictionary
     dictionary[extension_name] = extension_field
 
@@ -314,7 +320,7 @@ def _AddInitMethod(message_descriptor, cls):
     self._is_present_in_parent = False
     self._listener = message_listener_mod.NullMessageListener()
     self._listener_for_children = _Listener(self)
-    for field_name, field_value in kwargs.iteritems():
+    for field_name, field_value in kwargs.items():
       field = _GetFieldByName(message_descriptor, field_name)
       if field is None:
         raise TypeError("%s() got an unexpected keyword argument '%s'" %
@@ -527,7 +533,7 @@ def _AddPropertiesForNonRepeatedCompositeField(field, cls):
 def _AddPropertiesForExtensions(descriptor, cls):
   """Adds properties for all fields in this protocol message type."""
   extension_dict = descriptor.extensions_by_name
-  for extension_name, extension_field in extension_dict.iteritems():
+  for extension_name, extension_field in extension_dict.items():
     constant_name = extension_name.upper() + "_FIELD_NUMBER"
     setattr(cls, constant_name, extension_field.number)
 
@@ -582,7 +588,7 @@ def _AddListFieldsMethod(message_descriptor, cls):
   """Helper for _AddMessageMethods()."""
 
   def ListFields(self):
-    all_fields = [item for item in self._fields.iteritems() if _IsPresent(item)]
+    all_fields = [item for item in iteritems(self._fields) if _IsPresent(item)]
     all_fields.sort(key = lambda item: item[0].number)
     return all_fields
 
@@ -697,8 +703,14 @@ def _AddEqualsMethod(message_descriptor, cls):
 
 def _AddStrMethod(message_descriptor, cls):
   """Helper for _AddMessageMethods()."""
+
   def __str__(self):
     return text_format.MessageToString(self)
+
+  if sys.version_info[0] == 3:
+    def __str__(self, formatter=__str__):
+      return formatter(self).decode('utf-8')
+
   cls.__str__ = __str__
 
 
@@ -864,7 +876,7 @@ def _AddIsInitializedMethod(message_descriptor, cls):
           errors.extend(self.FindInitializationErrors())
         return False
 
-    for field, value in self._fields.iteritems():
+    for field, value in iteritems(self._fields):
       if field.cpp_type == _FieldDescriptor.CPPTYPE_MESSAGE:
         if field.label == _FieldDescriptor.LABEL_REPEATED:
           for element in value:
@@ -933,7 +945,7 @@ def _AddMergeFromMethod(cls):
 
     fields = self._fields
 
-    for field, value in msg._fields.iteritems():
+    for field, value in iteritems(msg._fields):
       if field.label == LABEL_REPEATED:
         field_value = fields.get(field)
         if field_value is None:

@@ -28,8 +28,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# This code is meant to work on Python 2.4 and above only.
-
 """Contains a metaclass and helper functions used to create
 protocol message classes from Descriptor objects at runtime.
 
@@ -51,6 +49,7 @@ __author__ = 'robinson@google.com (Will Robinson)'
 from google.protobuf.internal import api_implementation
 from google.protobuf import descriptor as descriptor_mod
 from google.protobuf import message
+from google.protobuf import metaclass
 
 _FieldDescriptor = descriptor_mod.FieldDescriptor
 
@@ -160,6 +159,7 @@ def ParseMessage(descriptor, byte_str):
     Newly created protobuf Message object.
   """
 
+  @metaclass.decorator
   class _ResultClass(message.Message):
     __metaclass__ = GeneratedProtocolMessageType
     DESCRIPTOR = descriptor

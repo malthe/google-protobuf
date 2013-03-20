@@ -88,3 +88,10 @@ Patch contributors:
     * Added CodedInputStream.getTotalBytesRead().
   Kacper Kowalik <xarthisius.kk@gmail.com>
     * Fixed m4/acx_pthread.m4 problem for some Linux distributions.
+  Charles Law <charles.law@openx.com>
+    * Patches toward Python 3 compatibility.
+  Malthe Borch <mborch@gmail.com>
+    * Added support for Python 3. Note that Python 2.7+ is now the
+      only supported minor release on the 2.x-series, while 3.3+ is
+      required on the 3.x-series (for syntax compatibility).
+

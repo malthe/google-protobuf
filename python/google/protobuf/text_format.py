@@ -32,12 +32,27 @@
 
 __author__ = 'kenton@google.com (Kenton Varda)'
 
+
 try:
-  import cStringIO
+  from cStringIO import StringIO
 except ImportError:
-  import os as cStringIO
+  try:
+    from io import BytesIO
+
+    class StringIO(BytesIO):
+      def write(self, s):
+        if isinstance(s, str):
+          s = s.encode('ascii')
+        BytesIO.write(self, s)
+
+  except ImportError:
+    from StringIO import StringIO
 
 import re
+import ast
+import sys
+import json
+import codecs
 
 from collections import deque
 from google.protobuf.internal import type_checkers
@@ -51,8 +66,13 @@ _INTEGER_CHECKERS = (type_checkers.Uint32ValueChecker(),
                      type_checkers.Int32ValueChecker(),
                      type_checkers.Uint64ValueChecker(),
                      type_checkers.Int64ValueChecker())
-_FLOAT_INFINITY = re.compile('-?inf(?:inity)?f?', re.IGNORECASE)
-_FLOAT_NAN = re.compile('nanf?', re.IGNORECASE)
+_FLOAT_INFINITY = re.compile(b'-?inf(?:inity)?f?', re.IGNORECASE)
+_FLOAT_NAN = re.compile(b'nanf?', re.IGNORECASE)
+
+# Infinity and NaN are not explicitly supported by Python pre-2.6, and
+# float('inf') does not work on Windows (pre-2.6).
+_INFINITY = 1e10000    # overflows, thus will actually be infinity.
+_NAN = _INFINITY * 0
 
 
 class ParseError(Exception):
@@ -60,7 +80,7 @@ class ParseError(Exception):
 
 
 def MessageToString(message, as_utf8=False, as_one_line=False):
-  out = cStringIO.StringIO()
+  out = StringIO()
   PrintMessage(message, out, as_utf8=as_utf8, as_one_line=as_one_line)
   result = out.getvalue()
   out.close()
@@ -133,10 +153,11 @@ def PrintFieldValue(field, value, out, indent=0,
       out.write(str(value))
   elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_STRING:
     out.write('\"')
-    if type(value) is unicode:
-      out.write(_CEscape(value.encode('utf-8'), as_utf8))
-    else:
-      out.write(_CEscape(value, as_utf8))
+    try:
+      value = value.encode('utf-8')
+    except AttributeError:
+      pass
+    out.write(_CEscape(value, as_utf8))
     out.write('\"')
   elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_BOOL:
     if value:
@@ -144,8 +165,12 @@ def PrintFieldValue(field, value, out, indent=0,
     else:
       out.write("false")
   else:
-    out.write(str(value))
-
+    value = str(value)
+    try:
+      value = value.encode('utf-8')
+    except AttributeError:
+      pass
+    out.write(value)
 
 def Merge(text, message):
   """Merges an ASCII representation of a protocol message into a message.
@@ -173,16 +198,17 @@ def _MergeField(tokenizer, message):
     ParseError: In case of ASCII parsing problems.
   """
   message_descriptor = message.DESCRIPTOR
-  if tokenizer.TryConsume('['):
+  if tokenizer.TryConsume(b'['):
     name = [tokenizer.ConsumeIdentifier()]
-    while tokenizer.TryConsume('.'):
+    while tokenizer.TryConsume(b'.'):
       name.append(tokenizer.ConsumeIdentifier())
-    name = '.'.join(name)
+    name = b'.'.join(name)
 
     if not message_descriptor.is_extendable:
       raise tokenizer.ParseErrorPreviousToken(
           'Message type "%s" does not have extensions.' %
           message_descriptor.full_name)
+    name = name.decode('ascii')
     field = message.Extensions._FindExtensionByName(name)
     if not field:
       raise tokenizer.ParseErrorPreviousToken(
@@ -191,9 +217,10 @@ def _MergeField(tokenizer, message):
       raise tokenizer.ParseErrorPreviousToken(
           'Extension "%s" does not extend message type "%s".' % (
               name, message_descriptor.full_name))
-    tokenizer.Consume(']')
+    tokenizer.Consume(b']')
   else:
     name = tokenizer.ConsumeIdentifier()
+    name = name.decode('ascii')
     field = message_descriptor.fields_by_name.get(name, None)
 
     # Group names are expected to be capitalized as they appear in the
@@ -214,13 +241,13 @@ def _MergeField(tokenizer, message):
               message_descriptor.full_name, name))
 
   if field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_MESSAGE:
-    tokenizer.TryConsume(':')
+    tokenizer.TryConsume(b':')
 
-    if tokenizer.TryConsume('<'):
-      end_token = '>'
+    if tokenizer.TryConsume(b'<'):
+      end_token = b'>'
     else:
-      tokenizer.Consume('{')
-      end_token = '}'
+      tokenizer.Consume(b'{')
+      end_token = b'}'
 
     if field.label == descriptor.FieldDescriptor.LABEL_REPEATED:
       if field.is_extension:
@@ -236,7 +263,8 @@ def _MergeField(tokenizer, message):
 
     while not tokenizer.TryConsume(end_token):
       if tokenizer.AtEnd():
-        raise tokenizer.ParseErrorPreviousToken('Expected "%s".' % (end_token))
+        raise tokenizer.ParseErrorPreviousToken('Expected "%s".' % (
+          end_token.decode('ascii')))
       _MergeField(tokenizer, sub_message)
   else:
     _MergeScalarField(tokenizer, message, field)
@@ -254,7 +282,7 @@ def _MergeScalarField(tokenizer, message, field):
     ParseError: In case of ASCII parsing problems.
     RuntimeError: On runtime errors.
   """
-  tokenizer.Consume(':')
+  tokenizer.Consume(b':')
   value = None
 
   if field.type in (descriptor.FieldDescriptor.TYPE_INT32,
@@ -306,24 +334,30 @@ class _Tokenizer(object):
   It was directly ported from the Java protocol buffer API.
   """
 
-  _WHITESPACE = re.compile('(\\s|(#.*$))+', re.MULTILINE)
+  _WHITESPACE = re.compile(b'(\\s|(#.*$))+', re.MULTILINE)
   _TOKEN = re.compile(
-      '[a-zA-Z_][0-9a-zA-Z_+-]*|'           # an identifier
-      '[0-9+-][0-9a-zA-Z_.+-]*|'            # a number
-      '\"([^\"\n\\\\]|\\\\.)*(\"|\\\\?$)|'  # a double-quoted string
-      '\'([^\'\n\\\\]|\\\\.)*(\'|\\\\?$)')  # a single-quoted string
-  _IDENTIFIER = re.compile('\w+')
+      b'[a-zA-Z_][0-9a-zA-Z_+-]*|'           # an identifier
+      b'[0-9+-][0-9a-zA-Z_.+-]*|'            # a number
+      b'\"([^\"\n\\\\]|\\\\.)*(\"|\\\\?$)|'  # a double-quoted string
+      b'\'([^\'\n\\\\]|\\\\.)*(\'|\\\\?$)')  # a single-quoted string
+  _IDENTIFIER = re.compile(b'\w+')
+  _INTEGER_CHECKERS = [type_checkers.Uint32ValueChecker(),
+                       type_checkers.Int32ValueChecker(),
+                       type_checkers.Uint64ValueChecker(),
+                       type_checkers.Int64ValueChecker()]
+  _FLOAT_INFINITY = re.compile(b'-?inf(inity)?f?', re.IGNORECASE)
+  _FLOAT_NAN = re.compile(b"nanf?", re.IGNORECASE)
 
   def __init__(self, text_message):
+    assert isinstance(text_message, bytes)
     self._text_message = text_message
-
     self._position = 0
     self._line = -1
     self._column = 0
     self._token_start = None
-    self.token = ''
-    self._lines = deque(text_message.split('\n'))
-    self._current_line = ''
+    self.token = b''
+    self._lines = deque(text_message.split(b'\n'))
+    self._current_line = b''
     self._previous_line = 0
     self._previous_column = 0
     self._SkipWhitespace()
@@ -335,12 +369,12 @@ class _Tokenizer(object):
     Returns:
       True iff the end was reached.
     """
-    return self.token == ''
+    return self.token == b''
 
   def _PopLine(self):
     while len(self._current_line) <= self._column:
       if not self._lines:
-        self._current_line = ''
+        self._current_line = b''
         return
       self._line += 1
       self._column = 0
@@ -380,6 +414,17 @@ class _Tokenizer(object):
     """
     if not self.TryConsume(token):
       raise self._ParseError('Expected "%s".' % token)
+
+  def LookingAtInteger(self):
+    """Checks if the current token is an integer.
+
+    Returns:
+      True iff the current token is an integer.
+    """
+    if not self.token:
+      return False
+    c = self.token[0:1]
+    return (c >= '0' and c <= '9') or c == '-' or c == '+'
 
   def ConsumeIdentifier(self):
     """Consumes protocol message field identifier.
@@ -503,7 +548,7 @@ class _Tokenizer(object):
     """
     bytes = self.ConsumeByteString()
     try:
-      return unicode(bytes, 'utf-8')
+      return bytes.decode('utf-8')
     except UnicodeDecodeError as e:
       raise self._StringParseError(e)
 
@@ -517,9 +562,9 @@ class _Tokenizer(object):
       ParseError: If a byte array value couldn't be consumed.
     """
     list = [self._ConsumeSingleByteString()]
-    while len(self.token) > 0 and self.token[0] in ('\'', '"'):
+    while len(self.token) > 0 and self.token[0:1] in (b'\'', b'"'):
       list.append(self._ConsumeSingleByteString())
-    return "".join(list)
+    return b"".join(list)
 
   def _ConsumeSingleByteString(self):
     """Consume one token of a string literal.
@@ -529,10 +574,10 @@ class _Tokenizer(object):
     method only consumes one token.
     """
     text = self.token
-    if len(text) < 1 or text[0] not in ('\'', '"'):
+    if len(text) < 1 or text[0:1] not in (b'\'', b'"'):
       raise self._ParseError('Expected string.')
 
-    if len(text) < 2 or text[-1] != text[0]:
+    if len(text) < 2 or text[-1:] != text[0:1]:
       raise self._ParseError('String missing ending quote.')
 
     try:
@@ -579,7 +624,7 @@ class _Tokenizer(object):
     self._SkipWhitespace()
 
     if not self._lines and len(self._current_line) <= self._column:
-      self.token = ''
+      self.token = b''
       return
 
     match = self._TOKEN.match(self._current_line, self._column)
@@ -587,7 +632,7 @@ class _Tokenizer(object):
       token = match.group(0)
       self.token = token
     else:
-      self.token = self._current_line[self._column]
+      self.token = self._current_line[self._column:self._column + 1]
 
 
 # text.encode('string_escape') does not seem to satisfy our needs as it
@@ -596,26 +641,36 @@ class _Tokenizer(object):
 # "\0011".encode('string_escape') ends up being "\\x011", which will be
 # decoded in C++ as a single-character string with char code 0x11.
 def _CEscape(text, as_utf8):
-  def escape(c):
-    o = ord(c)
-    if o == 10: return r"\n"   # optional escape
-    if o == 13: return r"\r"   # optional escape
-    if o ==  9: return r"\t"   # optional escape
-    if o == 39: return r"\'"   # optional escape
+  if sys.version_info[0] == 3:
+    local_ord = int
+    local_chr = lambda c: bytes((c, ))
+    local_bytestring = lambda s: s.encode('ascii')
+  else:
+    local_ord = ord
+    local_chr = str
+    local_bytestring = str
 
-    if o == 34: return r'\"'   # necessary escape
-    if o == 92: return r"\\"   # necessary escape
+  def escape(c):
+    o = local_ord(c)
+
+    if o == 10: return b"\\n"   # optional escape
+    if o == 13: return b"\\r"   # optional escape
+    if o ==  9: return b"\\t"   # optional escape
+    if o == 39: return b"\\'"   # optional escape
+    if o == 34: return b'\\"'   # necessary escape
+    if o == 92: return b"\\\\"  # necessary escape
 
     # necessary escapes
-    if not as_utf8 and (o >= 127 or o < 32): return "\\%03o" % o
-    return c
-  return "".join([escape(c) for c in text])
+    if not as_utf8 and (o >= 127 or o < 32):
+      return local_bytestring("\\%03o" % o)
+    return local_chr(c)
+  return b"".join([escape(c) for c in text])
 
 
-_CUNESCAPE_HEX = re.compile(r'(\\+)x([0-9a-fA-F])(?![0-9a-fA-F])')
+_CUNESCAPE_HEX = re.compile(b'(\\\+)x([0-9a-fA-F])(?![0-9a-fA-F])')
+_CUNESCAPE_ESC = re.compile(b'\\\\(\\\\|[0-7]{1,3}|x.[0-9a-f]?|[\'"abfnrt]|.|$)')
 
-
-def _CUnescape(text):
+def _CUnescape(text, builtin_string_escape=sys.version_info[0] == 2):
   def ReplaceHex(m):
     # Only replace the match if the number of leading back slashes is odd. i.e.
     # the slash itself is not escaped.
@@ -623,10 +678,43 @@ def _CUnescape(text):
       return m.group(1) + 'x0' + m.group(2)
     return m.group(0)
 
-  # This is required because the 'string_escape' encoding doesn't
-  # allow single-digit hex escapes (like '\xf').
-  result = _CUNESCAPE_HEX.sub(ReplaceHex, text)
-  return result.decode('string_escape')
+  if builtin_string_escape:
+    # This is required because the 'string_escape' encoding doesn't
+    # allow single-digit hex escapes (like '\xf').
+    result = _CUNESCAPE_HEX.sub(ReplaceHex, text)
+    result = result.decode('string_escape')
+  else:
+    # Alas, 'string-escape' is not available on Python 3. We use a
+    # regular expression to match the escape sequences.
+    def replace(m):
+      b = m.group(1)
+      if len(b) == 0:
+        raise ValueError("Invalid character escape: '\\'.")
+      i = b[0]
+      if i == 120:
+        v = int(b[1:], 16)
+      elif 48 <= i <= 55:
+        v = int(b, 8)
+      elif i == 34: return b'"'
+      elif i == 39: return b"'"
+      elif i == 92: return b'\\'
+      elif i == 97: return b'\a'
+      elif i == 98: return b'\b'
+      elif i == 102: return b'\f'
+      elif i == 110: return b'\n'
+      elif i == 114: return b'\r'
+      elif i == 116: return b'\t'
+      else:
+        s = b.decode('ascii')
+        raise UnicodeDecodeError(
+          'stringescape', text, m.start(), m.end(), "Invalid escape: %r" % s
+        )
+
+      return bytes((v, ))
+
+    result = _CUNESCAPE_ESC.sub(replace, text)
+
+  return result
 
 
 def ParseInteger(text, is_signed=False, is_long=False):
@@ -647,7 +735,7 @@ def ParseInteger(text, is_signed=False, is_long=False):
   try:
     result = int(text, 0)
   except ValueError:
-    raise ValueError('Couldn\'t parse integer: %s' % text)
+    raise ValueError('Couldn\'t parse integer: %s' % text.decode('utf-8'))
 
   # Check if the integer is sane. Exceptions handled by callers.
   checker = _INTEGER_CHECKERS[2 * int(is_long) + int(is_signed)]
@@ -682,7 +770,7 @@ def ParseFloat(text):
     else:
       # assume '1.0f' format
       try:
-        return float(text.rstrip('f'))
+        return float(text.rstrip(b'f'))
       except ValueError:
         raise ValueError('Couldn\'t parse float: %s' % text)
 
@@ -699,9 +787,9 @@ def ParseBool(text):
   Raises:
     ValueError: If text is not a valid boolean.
   """
-  if text in ('true', 't', '1'):
+  if text in (b'true', b't', b'1'):
     return True
-  elif text in ('false', 'f', '0'):
+  elif text in (b'false', b'f', b'0'):
     return False
   else:
     raise ValueError('Expected "true" or "false".')
@@ -728,6 +816,7 @@ def ParseEnum(field, value):
     number = int(value, 0)
   except ValueError:
     # Identifier.
+    value = value.decode('utf-8')
     enum_value = enum_descriptor.values_by_name.get(value, None)
     if enum_value is None:
       raise ValueError(

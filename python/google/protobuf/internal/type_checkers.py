@@ -49,6 +49,7 @@ import sys
 
 if sys.version_info[0] == 3:
   long = int
+  basestring = (str, bytes)
 
 from google.protobuf.internal import decoder
 from google.protobuf.internal import encoder
@@ -116,17 +117,20 @@ class UnicodeValueChecker(object):
   """Checker used for string fields."""
 
   def CheckValue(self, proposed_value):
-    if not isinstance(proposed_value, (str, unicode)):
+    if not isinstance(proposed_value, basestring):
       message = ('%.1024r has type %s, but expected one of: %s' %
-                 (proposed_value, type(proposed_value), (str, unicode)))
+                 (proposed_value, type(proposed_value), basestring))
       raise TypeError(message)
 
     # If the value is of type 'str' make sure that it is in 7-bit ASCII
     # encoding.
-    if isinstance(proposed_value, str):
+    if isinstance(proposed_value, bytes):
       try:
-        unicode(proposed_value, 'ascii')
-      except UnicodeDecodeError:
+        try:
+          proposed_value.decode('ascii')
+        except AttributeError:
+          proposed_value.encode('ascii')
+      except UnicodeError:
         raise ValueError('%.1024r has type str, but isn\'t in 7-bit ASCII '
                          'encoding. Non-ASCII strings must be converted to '
                          'unicode objects before being added.' %
@@ -167,7 +171,7 @@ _VALUE_CHECKERS = {
         float, int, long),
     _FieldDescriptor.CPPTYPE_BOOL: TypeChecker(bool, int),
     _FieldDescriptor.CPPTYPE_ENUM: Int32ValueChecker(),
-    _FieldDescriptor.CPPTYPE_STRING: TypeChecker(str),
+    _FieldDescriptor.CPPTYPE_STRING: TypeChecker(bytes),
     }
 
 

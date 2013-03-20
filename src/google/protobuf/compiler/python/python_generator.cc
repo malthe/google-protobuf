@@ -138,6 +138,7 @@ void PrintTopBoilerplate(
       "from google.protobuf import descriptor as _descriptor\n"
       "from google.protobuf import message as _message\n"
       "from google.protobuf import reflection as _reflection\n"
+      "from google.protobuf import metaclass as _metaclass\n"
       );
   if (HasGenericServices(file)) {
     printer->Print(
@@ -218,7 +219,7 @@ string StringifyDefaultValue(const FieldDescriptor& field) {
       return SimpleItoa(field.default_value_enum()->number());
     case FieldDescriptor::CPPTYPE_STRING:
       if (field.type() == FieldDescriptor::TYPE_STRING) {
-        return "u\"" + CEscape(field.default_value_string()) + "\"";
+        return "b\"" + CEscape(field.default_value_string()) + "\".decode('utf-8')";
       } else {
         return "b\"" + CEscape(field.default_value_string()) + "\"";
       }
@@ -329,7 +330,7 @@ void Generator::PrintFileDescriptor() const {
   printer_->Print(m, file_descriptor_template);
   printer_->Indent();
   printer_->Print(
-      "serialized_pb='$value$'",
+      "serialized_pb=b'$value$'",
       "value", strings::CHexEscape(file_descriptor_serialized_));
 
   // TODO(falk): Also print options and fix the message_type, enum_type,
@@ -521,7 +522,7 @@ void Generator::PrintServiceDescriptor(
 
 void Generator::PrintServiceClass(const ServiceDescriptor& descriptor) const {
   // Print the service.
-  printer_->Print("class $class_name$(_service.Service):\n",
+  printer_->Print("@_metaclass.decorator\nclass $class_name$(_service.Service):\n",
                   "class_name", descriptor.name());
   printer_->Indent();
   printer_->Print(
@@ -534,7 +535,7 @@ void Generator::PrintServiceClass(const ServiceDescriptor& descriptor) const {
 
 void Generator::PrintServiceStub(const ServiceDescriptor& descriptor) const {
   // Print the service stub.
-  printer_->Print("class $class_name$_Stub($class_name$):\n",
+  printer_->Print("@_metaclass.decorator\nclass $class_name$_Stub($class_name$):\n",
                   "class_name", descriptor.name());
   printer_->Indent();
   printer_->Print(
@@ -648,7 +649,7 @@ void Generator::PrintMessages() const {
 // Mutually recursive with PrintNestedMessages().
 void Generator::PrintMessage(
     const Descriptor& message_descriptor) const {
-  printer_->Print("class $name$(_message.Message):\n", "name",
+  printer_->Print("@_metaclass.decorator\nclass $name$(_message.Message):\n", "name",
                   message_descriptor.name());
   printer_->Indent();
   printer_->Print("__metaclass__ = _reflection.GeneratedProtocolMessageType\n");
@@ -874,7 +875,7 @@ string Generator::OptionsValue(
     return "None";
   } else {
     string full_class_name = "descriptor_pb2." + class_name;
-    return "_descriptor._ParseOptions(" + full_class_name + "(), '"
+    return "_descriptor._ParseOptions(" + full_class_name + "(), b'"
         + CEscape(serialized_options)+ "')";
   }
 }

@@ -80,18 +80,18 @@ we repeatedly read a tag, look up the corresponding decoder, and invoke it.
 
 __author__ = 'kenton@google.com (Kenton Varda)'
 
+import sys
 import struct
+
 from google.protobuf.internal import encoder
 from google.protobuf.internal import wire_format
 from google.protobuf import message
-
 
 # This will overflow and thus become IEEE-754 "infinity".  We would use
 # "float('inf')" but it doesn't work on Windows pre-Python-2.6.
 _POS_INF = 1e10000
 _NEG_INF = -_POS_INF
 _NAN = _POS_INF * 0
-
 
 # This is not for optimization, but rather to avoid conflicts with local
 # variables named "message".
@@ -113,7 +113,7 @@ def _VarintDecoder(mask):
     result = 0
     shift = 0
     while 1:
-      b = local_ord(buffer[pos])
+      b = local_ord(buffer[pos:pos + 1])
       result |= ((b & 0x7f) << shift)
       pos += 1
       if not (b & 0x80):
@@ -133,7 +133,7 @@ def _SignedVarintDecoder(mask):
     result = 0
     shift = 0
     while 1:
-      b = local_ord(buffer[pos])
+      b = local_ord(buffer[pos:pos + 1])
       result |= ((b & 0x7f) << shift)
       pos += 1
       if not (b & 0x80):
@@ -169,7 +169,7 @@ def ReadTag(buffer, pos):
   """
 
   start = pos
-  while ord(buffer[pos]) & 0x80:
+  while ord(buffer[pos:pos + 1]) & 0x80:
     pos += 1
   pos += 1
   return (buffer[start:pos], pos)
@@ -294,13 +294,13 @@ def _FloatDecoder():
     # If this value has all its exponent bits set, then it's non-finite.
     # In Python 2.4, struct.unpack will convert it to a finite 64-bit value.
     # To avoid that, we parse it specially.
-    if ((float_bytes[3] in '\x7F\xFF')
-        and (float_bytes[2] >= '\x80')):
+    if ((float_bytes[3] in b'\x7F\xFF')
+        and (float_bytes[2] >= b'\x80')):
       # If at least one significand bit is set...
-      if float_bytes[0:3] != '\x00\x00\x80':
+      if float_bytes[0:3] != b'\x00\x00\x80':
         return (_NAN, new_pos)
       # If sign bit is set...
-      if float_bytes[3] == '\xFF':
+      if float_bytes[3] == b'\xFF':
         return (_NEG_INF, new_pos)
       return (_POS_INF, new_pos)
 
@@ -329,9 +329,9 @@ def _DoubleDecoder():
     # If this value has all its exponent bits set and at least one significand
     # bit set, it's not a number.  In Python 2.4, struct.unpack will treat it
     # as inf or -inf.  To avoid that, we treat it specially.
-    if ((double_bytes[7] in '\x7F\xFF')
-        and (double_bytes[6] >= '\xF0')
-        and (double_bytes[0:7] != '\x00\x00\x00\x00\x00\x00\xF0')):
+    if ((double_bytes[7] in b'\x7F\xFF')
+        and (double_bytes[6] >= b'\xF0')
+        and (double_bytes[0:7] != b'\x00\x00\x00\x00\x00\x00\xF0')):
       return (_NAN, new_pos)
 
     # Note that we expect someone up-stack to catch struct.error and convert
@@ -376,9 +376,7 @@ BoolDecoder = _ModifiedDecoder(
 
 def StringDecoder(field_number, is_repeated, is_packed, key, new_default):
   """Returns a decoder for a string field."""
-
   local_DecodeVarint = _DecodeVarint
-  local_unicode = unicode
 
   assert not is_packed
   if is_repeated:
@@ -394,7 +392,7 @@ def StringDecoder(field_number, is_repeated, is_packed, key, new_default):
         new_pos = pos + size
         if new_pos > end:
           raise _DecodeError('Truncated string.')
-        value.append(local_unicode(buffer[pos:new_pos], 'utf-8'))
+        value.append(buffer[pos:new_pos].decode('utf-8'))
         # Predict that the next tag is another copy of the same repeated field.
         pos = new_pos + tag_len
         if buffer[new_pos:pos] != tag_bytes or new_pos == end:
@@ -407,7 +405,7 @@ def StringDecoder(field_number, is_repeated, is_packed, key, new_default):
       new_pos = pos + size
       if new_pos > end:
         raise _DecodeError('Truncated string.')
-      field_dict[key] = local_unicode(buffer[pos:new_pos], 'utf-8')
+      field_dict[key] = buffer[pos:new_pos].decode('utf-8')
       return new_pos
     return DecodeField
 
@@ -632,7 +630,7 @@ def MessageSetItemDecoder(extensions_by_number):
 def _SkipVarint(buffer, pos, end):
   """Skip a varint value.  Returns the new position."""
 
-  while ord(buffer[pos]) & 0x80:
+  while ord(buffer[pos:pos + 1]) & 0x80:
     pos += 1
   pos += 1
   if pos > end:
@@ -699,7 +697,10 @@ def _FieldSkipper():
       ]
 
   wiretype_mask = wire_format.TAG_TYPE_MASK
-  local_ord = ord
+  if sys.version_info[0] == 3:
+    local_ord = int
+  else:
+    local_ord = ord
 
   def SkipField(buffer, pos, end, tag_bytes):
     """Skips a field with the specified tag.
